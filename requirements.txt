@@ -1,0 +1,26 @@
+# Core dependencies
+gradio==5.46.1
+gradio_client==1.13.1
+transformers-stream-generator==0.0.5
+#git+https://github.com/huggingface/transformers.git
+torch
+torchvision
+accelerate
+sentencepiece
+datasets
+peft
+swanlab
+qwen-vl-utils
+bitsandbytes
+Pillow
+langchain
+langchain-community
+langchain-core
+langchain-text-splitters
+sentence-transformers
+faiss-cpu
+PyQt5
+pypdf
+# Optional dependency
+# Uncomment the following line if you need flash-attn
+# flash-attn

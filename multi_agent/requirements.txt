@@ -1,0 +1,14 @@
+# 项目依赖（根据本地环境选择 GPU/CPU 版本的 torch/bitsandbytes）
+torch
+transformers
+peft
+accelerate
+bitsandbytes
+Pillow
+langchain
+langchain-community
+langchain-core
+langchain-text-splitters
+sentence-transformers
+faiss-cpu
+PySide6

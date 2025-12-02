@@ -11,4 +11,5 @@ langchain-core
 langchain-text-splitters
 sentence-transformers
 faiss-cpu
+rank-bm25
 PySide6

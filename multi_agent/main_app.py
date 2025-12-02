@@ -2,7 +2,7 @@
 
 import os
 import sys
-from typing import Optional
+from typing import List, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -23,6 +23,7 @@ class Worker(QtCore.QThread):
         question: str,
         image_path: Optional[str],
         use_rag: bool,
+        chat_history: Optional[List[Tuple[str, str]]] = None,
         parent: Optional[QtCore.QObject] = None,
     ) -> None:
         super().__init__(parent)
@@ -30,6 +31,7 @@ class Worker(QtCore.QThread):
         self._question = question
         self._image_path = image_path
         self._use_rag = use_rag
+        self._history = list(chat_history) if chat_history else []
 
     def run(self) -> None:
         try:
@@ -38,6 +40,7 @@ class Worker(QtCore.QThread):
                 question=self._question,
                 image_paths=images,
                 use_knowledge=self._use_rag,
+                chat_history=self._history,
             )
             rag_text = format_documents(result.supporting_documents)
             if not rag_text:
@@ -102,6 +105,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._orchestrator = orchestrator
         self._worker: Optional[Worker] = None
         self._image_path: Optional[str] = None
+        self._chat_history: List[Tuple[str, str]] = []
 
         self.setWindowTitle("多智能体 RAG 助手")
         self.resize(1150, 720)
@@ -261,16 +265,20 @@ class MainWindow(QtWidgets.QMainWindow):
         if not query and not self._image_path:
             return
 
-        self.chat_area.add_message(query or "(仅图片)", is_user=True)
+        user_message = query or "(仅图片)"
+        self.chat_area.add_message(user_message, is_user=True)
         self.input_edit.clear()
         self.send_btn.setEnabled(False)
         self.statusBar().showMessage("多智能体正在思考...")
+
+        self._chat_history.append(("user", user_message))
 
         self._worker = Worker(
             orchestrator=self._orchestrator,
             question=query or "请描述这张图片",
             image_path=self._image_path,
             use_rag=self.use_rag_cb.isChecked(),
+            chat_history=self._chat_history,
         )
         self._worker.finished.connect(self._on_answer_ready)
         self._worker.failed.connect(self._on_failed)
@@ -278,6 +286,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_answer_ready(self, plan: str, answer: str, rag_text: str) -> None:
         self.chat_area.add_message(answer, is_user=False)
+        self._chat_history.append(("assistant", answer))
         self.plan_text.setPlainText(plan)
         self.rag_text.setPlainText(rag_text)
         self.send_btn.setEnabled(True)

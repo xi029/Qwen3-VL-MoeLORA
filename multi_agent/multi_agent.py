@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
 try:  # LangChain >= 0.1 拆分
     from langchain_core.documents import Document as _LCDocument
@@ -18,6 +18,7 @@ Document = _LCDocument
 from langchain_wrappers import LocalQwenTextLLM
 from model_client import LocalMultimodalModel
 from rag_pipeline import build_retriever, format_documents
+from tools import save_session_summary_sync
 
 
 @dataclass
@@ -25,6 +26,7 @@ class AgentOutput:
     plan: str
     answer: str
     supporting_documents: List[Document]
+    summary_path: Optional[str] = None
 
 #1、规划智能体（PlannerAgent）：将用户问题拆解为 3-5 个关键步骤，制定任务计划
 #   工作方式：接收用户问题，通过 LLM 生成解决问题的步骤规划
@@ -89,6 +91,7 @@ class ResponseAgent:
         plan: str,
         context: str,
         image_paths: Optional[List[str]] = None,
+        review_feedback: Optional[str] = None,
     ) -> str:
         prompt = (
             "你是一名图文多模态专家。请综合任务计划与知识库内容回答用户问题，"
@@ -100,7 +103,36 @@ class ResponseAgent:
             "【用户问题】\n"
             f"{question}"
         )
+        if review_feedback:
+            prompt += (
+                "\n\n【Reviewer 改进建议】\n"
+                f"{review_feedback}\n"
+                "请务必根据上述建议修订答案，确保完整回答用户。"
+            )
         return self._client.generate(prompt=prompt, image_inputs=image_paths)
+
+
+class ReviewerAgent:
+    def __init__(self, llm: LocalQwenTextLLM) -> None:
+        self._llm = llm
+
+    def review(self, question: str, answer: str) -> Tuple[bool, str]:
+        prompt = (
+            "你是一名答案质检员，请判断助手的回复是否充分解决用户问题。"
+            "请输出以下格式：\nVerdict: PASS 或 RETRY\nFeedback: 具体建议。"
+            "\n\n【用户问题】\n"
+            f"{question}\n\n"
+            "【助手回答】\n"
+            f"{answer}\n"
+        )
+        feedback = self._llm.generate(prompt, max_new_tokens=200)
+        verdict_line = next(
+            (line for line in feedback.splitlines() if "verdict" in line.lower()),
+            "",
+        )
+        verdict = verdict_line.upper()
+        is_pass = "PASS" in verdict and "RETRY" not in verdict
+        return is_pass, feedback.strip()
 
 #多智能体的协作流程
 class MultiAgentOrchestrator:
@@ -112,30 +144,137 @@ class MultiAgentOrchestrator:
         self._knowledge = KnowledgeAgent(retriever)
         self._manager = ManagerAgent(base_llm)
         self._responder = ResponseAgent(LocalMultimodalModel.get_shared())
+        self._reviewer = ReviewerAgent(base_llm)
+        self._summary_keywords = (
+            "总结对话",
+            "总结记录",
+            "保存记录",
+            "保存对话",
+            "归档",
+            "保存摘要",
+            "save record",
+            "save log",
+            "archive",
+            "summarize",
+            "summary",
+        )
 
     def run(
         self,
         question: str,
         image_paths: Optional[List[str]] = None,
         use_knowledge: bool = True,
+        chat_history: Optional[List[Tuple[str, str]]] = None,
     ) -> AgentOutput:
+        history = chat_history or []
+        is_summary_request = self._needs_session_summary(question)
+        history_text = self._format_chat_history(history) if history else ""
+        effective_question = question
+        if is_summary_request and history_text:
+            effective_question = (
+                question.strip()
+                + "\n\n【对话记录】\n"
+                + history_text
+                + "\n请基于上述对话内容生成总结或归档。"
+            )
         # 1. 知识智能体检索相关文档
-        docs = self._knowledge.search(question) if use_knowledge else []
+        enable_knowledge = use_knowledge and not is_summary_request
+        docs = self._knowledge.search(question) if enable_knowledge else []
         context = format_documents(docs)
         # 2. 规划智能体制定任务计划
-        planner_plan = self._planner.run(question)
+        planner_plan = self._planner.run(effective_question)
         # 3. 管理智能体给出调度建议
         manager_feedback = self._manager.run(
-            question=question,
+            question=effective_question,
             context_preview=context[:1200],
         )
         # 4. 响应智能体生成最终回答
         answer = self._responder.respond(
-            question=question,
+            question=effective_question,
             plan=planner_plan,
             context=context,
             image_paths=image_paths,
         )
-         # 5. 整合结果并返回
-        combined_plan = manager_feedback.strip() + "\n\n" + planner_plan.strip()
-        return AgentOutput(plan=combined_plan, answer=answer, supporting_documents=docs)
+        review_passed, review_notes = self._reviewer.review(effective_question, answer)
+        if not review_passed:
+            revised_answer = self._responder.respond(
+                question=effective_question,
+                plan=planner_plan,
+                context=context,
+                image_paths=image_paths,
+                review_feedback=review_notes,
+            )
+            answer = revised_answer
+            review_passed, review_notes = self._reviewer.review(effective_question, answer)
+
+        review_summary = (
+            "Reviewer Verdict: "
+            + ("PASS" if review_passed else "RETRY")
+            + "\n"
+            + review_notes
+        )
+
+        combined_plan = (
+            manager_feedback.strip()
+            + "\n\n"
+            + planner_plan.strip()
+            + "\n\n"
+            + review_summary.strip()
+        )
+
+        summary_path: Optional[str] = None
+        if is_summary_request:
+            summary_title = question[:24] or "对话总结"
+            summary_payload = (
+                "## 用户问题\n"
+                f"{question}\n\n"
+                "## 最终回答\n"
+                f"{answer}\n\n"
+                "## 调度计划\n"
+                f"{combined_plan}\n\n"
+                "## 对话记录\n"
+                f"{history_text or '（无历史记录，无法总结上下文）'}\n\n"
+                "## 检索证据\n"
+                f"{context or '无'}\n"
+            )
+            summary_path = save_session_summary_sync(
+                content=summary_payload,
+                title=summary_title,
+            )
+            answer = (
+                answer
+                + "\n\n（已根据指令调用 save_session_summary 工具，文件路径："
+                + summary_path
+                + ")"
+            )
+
+        return AgentOutput(
+            plan=combined_plan,
+            answer=answer,
+            supporting_documents=docs,
+            summary_path=summary_path,
+        )
+
+    def _needs_session_summary(self, question: str) -> bool:
+        normalized = question.strip()
+        if not normalized:
+            return False
+        lower = normalized.lower()
+        for keyword in self._summary_keywords:
+            key_lower = keyword.lower()
+            if keyword in normalized or key_lower in lower:
+                return True
+        return False
+
+    def _format_chat_history(self, history: List[Tuple[str, str]]) -> str:
+        if not history:
+            return ""
+        speaker_map = {
+            "user": "用户",
+            "assistant": "Multi-Agent",
+        }
+        lines = []
+        for idx, (role, content) in enumerate(history, start=1):
+            speaker = speaker_map.get(role.lower(), role)
+            lines.append(f"{idx}. **{speaker}**：{content}")
+        return "\n".join(lines)

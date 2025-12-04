@@ -197,33 +197,30 @@ config = LoraConfig(
 
 <details>
 <summary><strong>训练运行（log）</strong></summary>
-
-| 指标                          | LoRA                                                        | MoeLoRA                                                    |
-| ----------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------- |
-| 模型（base）                  | `qwen3-vl-4b-instruct`（本地路径 `./qwen3-vl-4b-instruct`） | `qwen3-vl-4b-instruct`（`./qwen3-vl-4b-instruct`）         |
-| 数据集样本数（train）         | 496 examples                                                | 496 examples                                               |
-| 最大上下文长度（脚本）        | 8192 tokens                                                 | 8192 tokens                                                |
-| 微调方法                      | LoRA (PEFT) + 4-bit quantization (bnb nf4)                  | MoeLoRA (多专家 LoRA) + 4-bit quantization (bnb nf4)       |
-| 注入的可训练参数（日志）      | 5,898,240 trainable params                                  | 10,298,240 trainable params                                |
-| 模型总参数量（日志）          | 4,443,714,048 全量参数                                      | 4,443,714,048 params                                       |
-| trainable 百分比（日志）      | ~0.1327%                                                    | ≈ 0.245%                                                   |
-| 训练轮次 (epochs)             | 5.0 epochs                                                  | 5.0 epochs                                                 |
-| 总训练步数（global steps）    | 310 steps                                                   | 310 steps                                                  |
-| 每 epoch 步数                 | ~62 steps/epoch                                             | 62                                                         |
-| per_device_train_batch_size   | 1 (已在脚本优化为 1)                                        | 1                                                          |
-| gradient_accumulation_steps   | 8                                                           | 8                                                          |
-| 学习率（初始）                | 1e-4                                                        | 1e-4                                                       |
-| 学习率（训练末期）            | ≈3.23e-07                                                   | 训练日志显示最后 step 的 lr: `3.2258e-07`（线性/调度衰减） |
-| 训练总时长                    | 5108.6867 s ≈ 85.15 min                                     | 6595.6952≈109min                                           |
-| 平均 train_loss（全程）       | ~1.70645                                                    | ~1.65432                                                   |
-| 初始 batch loss（第一条日志） | 4.8942                                                      | 4.7856                                                     |
-| 训练样本吞吐                  | 0.485 samples/s                                             | 0.44 samples/s                                             |
-| 训练步吞吐                    | 0.061 steps/s                                               | 0.055 steps/s                                              |
-| 梯度范数（观测范围）          | 约 1.25 — 3.75（观测）                                      | 1.5 — 4.5(波动)                                            |
-| 量化方式                      | 4-bit NF4 双量化，compute_dtype=float16                     | 4-bit NF4 双量化，compute_dtype=float16                    |
-| mixed-precision               | fp16=True（Trainer）                                        | `fp16=True`                                                |
-| checkpoint 信息               | 保存到 `./output/Qwen3-VL-4Blora`                           | ./output/Qwen3-VL-4Bmoelora/checkpoint-\*                  |
-| 训练中已记录（监控）          | SwanLab（logs/可视化）                                      | SwanLab（logs/可视化）                                     |
+| 指标                          | LoRA                                                        | MoeLoRA                                                     | Adapter (IA3)                                               |
+| ----------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------- |
+| 模型（base）                  | `qwen3-vl-4b-instruct`（本地路径 `./qwen3-vl-4b-instruct`） | `qwen3-vl-4b-instruct`（本地路径 `./qwen3-vl-4b-instruct`） | `qwen3-vl-4b-instruct`（本地路径 `./qwen3-vl-4b-instruct`） |
+| 数据集样本数（train）         | 496 examples                                                | 496 examples                                                | 496 examples                                                |
+| 最大上下文长度（脚本）        | 8192 tokens                                                 | 8192 tokens                                                 | 8192 tokens                                                 |
+| 微调方法                      | LoRA (PEFT) + 4-bit quantization (bnb nf4)                  | MoeLoRA (多专家 LoRA) + 4-bit quantization (bnb nf4)        | IA3 (Adapter) + 4-bit quantization (bnb nf4)                |
+| 注入的可训练参数（日志）      | 5,898,240 trainable params                                  | 10,298,240 trainable params                                 | 7,340,928 trainable params（≈734 万）                       |
+| 模型总参数量（日志）          | 4,443,714,048 全量参数                                      | 4,443,714,048 全量参数                                      | 4,443,714,048 全量参数                                      |
+| trainable 百分比（日志）      | ~0.1327%                                                    | ≈0.245%                                                     | ≈0.165%                                                     |
+| 训练轮次 (epochs)             | 5.0 epochs                                                  | 5.0 epochs                                                  | 5.0 epochs                                                  |
+| 总训练步数（global steps）    | 310 steps                                                   | 310 steps                                                   | 310 steps                                                   |
+| 每 epoch 步数                 | ~62 steps/epoch                                             | ~62 steps/epoch                                             | ~62 steps/epoch                                             |
+| per_device_train_batch_size   | 1                                                           | 1                                                           | 1                                                           |
+| gradient_accumulation_steps   | 8                                                           | 8                                                           | 8                                                           |
+| 学习率（初始）                | 1e-4                                                        | 1e-4                                                        | 1e-4                                                        |
+| 学习率（训练末期）            | 3.2258e-07                                                  | 3.2258e-07                                                  | 3.2258e-07                                                  |
+| 训练总时长                    | 5666.18 s ≈ 94.44 min                                       | 7802.80 s ≈ 130.05 min                                      | 5347.34 s ≈ 89.12 min                                       |
+| 平均 train_loss（全程）       | 1.5232                                                      | 1.4217                                                      | 1.9296                                                      |
+| 初始 batch loss（第一条日志） | 4.8942                                                      | 4.8942                                                      | 4.894                                                       |
+| 训练样本吞吐                  | 0.438 samples/s                                             | 0.318 samples/s                                             | 0.464 samples/s                                             |
+| 训练步吞吐                    | 0.055 steps/s                                               | 0.04 steps/s                                                | 0.058 steps/s                                               |
+| 梯度范数（观测范围）          | 约 1.65 — 3.82                                              | 约 1.57 — 4.06                                              | 约 0.57 — 2.83                                              |
+| 量化方式                      | 4-bit NF4 双量化，compute_dtype=float16                     | 4-bit NF4 双量化，compute_dtype=float16                     | 4-bit NF4 双量化，compute_dtype=float16                     |
+| mixed-precision               | fp16=True                                                   | fp16=True                                                   | fp16=True                                                   |
 
 加载训练好的 LoRA checkpoint 做推理
 

@@ -73,7 +73,7 @@ Qwen3-VL-MoeLORA/
 ### 1. 克隆 & 创建虚拟环境
 
 ```powershell
-git clone https://github.com/<your-account>/Qwen3-VL-MoeLORA.git
+git clone https://github.com/xi029/Qwen3-VL-MoeLORA
 cd Qwen3-VL-MoeLORA
 python -m venv .venv
 .venv\Scripts\activate

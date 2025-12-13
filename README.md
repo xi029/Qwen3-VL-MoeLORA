@@ -1,4 +1,4 @@
-# Qwen3-VL-MoeLoRA
+# Qwen3-VL-Multi-Agent
 
 ![](image/image.png)
 

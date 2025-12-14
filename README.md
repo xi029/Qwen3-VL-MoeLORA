@@ -2,7 +2,7 @@
 
 ![](image/image.png)
 
-> 在千问最新的多模态 image-text 模型 **Qwen3-VL-4B-Instruct** 上完成 MOELoRA（混合专家 LoRA）微调，同时打通 COCO 2014 数据处理、SwanLab 监控、LangChain + RAG + Qt 多智能体模型部署的全过程。
+> 在千问最新的多模态 image-text 模型 **Qwen3-VL-4B-Instruct** 上改进设计 MOELoRA\MOTLoRA（混合专家\token LoRA）微调，同时打通 COCO 2014 数据处理、SwanLab 监控、LangChain + RAG + Qt 多智能体模型部署的全过程。
 > 首先简单介绍一下 Qwen-vl 和 Qwen3-vl
 
 <details>
@@ -30,18 +30,44 @@
 
 ## 🚀 项目介绍与模块概览
 
-1. **数据 → 训练 → 推理全链路脚本齐全**：`download_data2csv.py` 负责拉取 & 清洗 COCO Caption，`csv2json.py` 适配 Qwen3-VL 格式，`MoeLORA.py/ lora.py` 处理 LoRA / MoeLoRA 训练，`test.py` 快速验证，`multi_agent/` 则提供 LangChain + RAG + Qt 多智能体部署。
+1. **数据 → 训练 → 推理全链路脚本齐全**：`download_data2csv.py` 负责拉取 & 清洗 COCO Caption，`csv2json.py` 适配 Qwen3-VL 格式，`MoeLORA.py/ MotLoRA.py/AdapterTuning.py` 处理 MotLoRA / MoeLoRA/IA3 训练，`test.py` 快速验证，`multi_agent/` 则提供 LangChain + RAG + Qt 多智能体部署。
 2. **本地化 RAG + 多模态多智能体助手**：PyQt5 桌面端 UI，整合 LangChain 检索、FAISS 向量库与本地 Qwen3-VL 推理，支持文本/图像问答、一键开关知识库引用。
 
 - Advanced RAG：BM25 + FAISS 混合召回，结合 `BAAI/bge-reranker-base` Cross-Encoder 重排序，默认输出最相关的 Top-N 片段。
 - Multi-Agent 升级：新增 Reviewer 自检步骤（最多重写一次答案）以及 MCP 风格 `save_session_summary` 工具，可把聊天记录一键导出 Markdown。
+  <img src="image/multi-Agent.png" width="50%">
 
-3. **轻量显存友好**：默认 4-bit NF4 量化 + LoRA，只需单卡 8G 也能跑完微调流程。
-4. **SwanLab 全程可视化**：训练日志、指标可视化齐备，便于调优与复现。
+1. **轻量显存友好**：默认 4-bit NF4 量化 + LoRA，只需单卡 8G 也能跑完微调流程。
+2. **SwanLab 全程可视化**：训练日志、指标可视化齐备，便于调优与复现。
 
 项目提供 “数据下载 → 格式转换 →LoRA / MoeLoRA 训练 → 本地推理 → 多智能体部署” 的最小可复现工程，帮助你快速验证自定义知识库 + 多模态问答的完整闭环。
 
 > 仓库不自带 Qwen3-VL-4B-Instruct 权重与 COCO 数据集，请按下文指引下载到指定目录。
+
+<details>
+<summary><strong>MOELoRA与MOTLoRA</strong></summary>
+
+##### **MOT LoRA（Mixture-of-Tokens LoRA）**
+
+- **原理**：在普通 LoRA（低秩矩阵适配）基础上，增加 1D 卷积的 Token 混合模块。通过卷积层跨序列维度融合 Token 特征，增强模型对长序列上下文的建模能力。
+- **核心**：单路径适配 + 卷积 Token 融合，提升序列内部关联捕捉能力。
+
+##### **MOE LoRA（Mixture-of-Experts LoRA）**
+
+- **原理**：采用多专家机制，每个目标层包含多个独立 LoRA 专家（低秩矩阵组），通过门控网络动态选择激活部分专家（基于输入特征），并引入负载均衡偏置优化专家利用率。
+- **核心**：多专家并行 + 门控路由，通过动态选择适配不同输入模式，提升模型灵活性。
+
+##### **核心区别**：
+
+- MOT LoRA 聚焦于 Token 维度的特征融合（序列内增强）；
+- MOE LoRA 聚焦于专家维度的动态选择（多模式适配）。
+
+MoT 通过进行以下更改来解决 MoE 模型的问题：
+
+1. 混合来自不同示例的 token，然后将其提供给专家；通过允许模型从所有 token-专家组合中学习，这提高了训练稳定性和专家利用率。
+2. token 混合是一个完全可微的模型，这意味着它可以使用标准的基于梯度的方法进行训练。这避免了辅助损失或其他难以训练的技术的需要，从而更容易训练和部署。”
+
+</details>
 
 ## 📁 项目结构
 
